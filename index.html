@@ -691,32 +691,12 @@ function fetchSheet(sheet){
     .then(function(r){if(!r.ok)throw new Error(r.status); return r.json();});
 }
 
-function parseMetas(rows){
-  // Converte "22%" -> 0.22
-  function pct(v){ return parseFloat(String(v||'0').replace('%','').replace(',','.'))/100||0; }
-  var result = {};
-  rows.forEach(function(r){
-    var mes = String(r['MÊS']||'').trim().toUpperCase();
-    if(!mes) return;
-    result[mes] = {
-      frei:    pct(r['FREI SERAFIM']),
-      eliseu:  pct(r['ELISEU MARTINS']),
-      petronio:pct(r['UNIVERSITÁRIA']||r['PETRÔNIO PORTELA']||r['UNIVERSITARIA'])
-    };
-  });
-  return result; // {JAN:{frei:0.22,eliseu:0.21,petronio:0.22}, ...}
-}
 function carregarTudo(){
   var lojas=['frei','eliseu','petronio'];
   el('h-upd').textContent='Carregando...';
   // Carrega METAS primeiro para garantir valores corretos antes dos dados de venda
   fetchSheet('METAS').then(parseMetas).catch(function(){}).finally(function(){
-    // Carrega metas da planilha ADM Geral
-  fetchSheet('METAS 2026').then(parseMetas).then(function(metas){
-    STATE.metas = metas;
-  }).catch(function(){ STATE.metas = {}; });
-
-  Promise.all(lojas.reduce(function(arr,l){
+    Promise.all(lojas.reduce(function(arr,l){
       return arr.concat([
         fetchSheet(ABAS[l].v).then(parseVendas).catch(function(e){console.warn('[API] vendas '+l+' falhou:',e);return null;}),
         fetchSheet(ABAS[l].d).then(parseDespesas).catch(function(e){console.warn('[API] desp '+l+' falhou:',e);return null;}),
@@ -754,6 +734,15 @@ function carregarTudo(){
       if(!Array.from(fMes.options).some(function(o){return o.value===cur;})){
         if(fMes.options.length>1)fMes.selectedIndex=fMes.options.length-1;
       }else{fMes.value=cur;}
+    }
+    if(fMes&&!fMes.value){
+      var _d=new Date();
+      var _mesAtual=_MESES_ABR[_d.getMonth()+1]+'/'+_d.getFullYear();
+      if(Array.from(fMes.options).some(function(o){return o.value===_mesAtual;})){
+        fMes.value=_mesAtual;
+      }else if(fMes.options.length>1){
+        fMes.selectedIndex=fMes.options.length-1;
+      }
     }
     renderAll();
     });
@@ -938,15 +927,7 @@ function calcLucro(loja, diasArr){
   var pctTeto=teto>0?totDespCx/teto:0;
   return{
     receita:receita,lucro:lucro,pctLucro:pctLucro,
-    metaLucro:(function(){
-    var fm=gF('f-mes');
-    if(fm&&STATE.metas){
-      var mes=fm.split('/')[0];
-      var lk=loja==='frei'?'frei':loja==='eliseu'?'eliseu':'petronio';
-      if(STATE.metas[mes]&&STATE.metas[mes][lk]) return STATE.metas[mes][lk];
-    }
-    return a.metaLucro||0;
-  })(),
+    metaLucro:a.metaLucro||0,
     projecao:projecao,pctProj:pctProj,lucroProj:lucroProj,
     totDespCx:totDespCx,teto:teto,pctTeto:pctTeto,
     bateuLucro:pctLucro>=(a.metaLucro||0)
@@ -995,7 +976,7 @@ function renderVendas(){
       +'<div class="canal-val">'+fmt(c.v)+'</div></div>';
   }).join('');
 
-  var topDias = [].concat(diasOp).sort(function(a,b){return b.receita-a.receita;}).slice(0,8)
+  var topDias = [].concat(diasOp).sort(function(a,b){return b.receita-a.receita;}).slice(0,7)
     .map(function(d,i){
       return '<tr><td style="color:var(--tx3);font-size:9px">'+(i+1)+'</td>'
         +'<td class="tdn">'+d.data.substring(0,5)+'</td>'
@@ -1042,21 +1023,21 @@ function renderVendas(){
   var dwNames = ['DOM','SEG','TER','QUA','QUI','SEX','SÁB'];
   var dwFull  = {DOM:'Domingo',SEG:'Segunda-feira',TER:'Terça-feira',QUA:'Quarta-feira',QUI:'Quinta-feira',SEX:'Sexta-feira','SÁB':'Sábado'};
   var todayDW  = dwNames[new Date().getDay()];
-  var metaHoje = METAS_CONFIG.dia[todayDW] || 0;
-  var metaSemana = ['SEG','TER','QUA','QUI','SEX'].reduce(function(s,d){return s+(METAS_CONFIG.dia[d]||0);},0)
-                 + (METAS_CONFIG.dia['SÁB']||0);
+  var metaHoje = getMetaDia(loja, todayDW);
+  var metaSemana = ['SEG','TER','QUA','QUI','SEX'].reduce(function(s,d){return s+getMetaDia(loja,d);},0)
+                 + getMetaDia(loja,'SÁB');
   var metaCards = ''
     +'<div class="meta-card" style="--mc:var(--amb)">'
       +'<div class="meta-card-label">Meta do Dia</div>'
       +'<div class="meta-card-val">'+fmt(metaHoje)+'</div>'
       +'<div class="meta-card-sub">Hoje: <strong>'+dwFull[todayDW]+'</strong></div>'
-      +'<div style="font-size:9px;color:var(--tx4);margin-top:6px">Seg–Sex: '+fmt(METAS_CONFIG.dia['SEG']||0)+' &nbsp;·&nbsp; Sáb: '+fmt(METAS_CONFIG.dia['SÁB']||0)+'</div>'
+      +'<div style="font-size:9px;color:var(--tx4);margin-top:6px">Seg–Sex: '+fmt(getMetaDia(loja,'SEG'))+' &nbsp;·&nbsp; Sáb: '+fmt(getMetaDia(loja,'SÁB'))+'</div>'
     +'</div>'
     +'<div class="meta-card" style="--mc:var(--blu)">'
       +'<div class="meta-card-label">Meta Semanal</div>'
       +'<div class="meta-card-val">'+fmt(metaSemana)+'</div>'
       +'<div class="meta-card-sub">5 dias úteis + 1 sábado</div>'
-      +'<div style="font-size:9px;color:var(--tx4);margin-top:6px">'+fmt(METAS_CONFIG.dia['SEG']||0)+' × 5 + '+fmt(METAS_CONFIG.dia['SÁB']||0)+' × 1</div>'
+      +'<div style="font-size:9px;color:var(--tx4);margin-top:6px">'+fmt(getMetaDia(loja,'SEG'))+' × 5 + '+fmt(getMetaDia(loja,'SÁB'))+' × 1</div>'
     +'</div>'
     +'<div class="meta-card" style="--mc:'+(pct>=1?'var(--grn)':'var(--red)')+'">'
       +'<div class="meta-card-label">Meta do Mês</div>'
@@ -1125,10 +1106,9 @@ function renderVendas(){
     +'<div class="meta-card-grid">'+metaCards+'</div>'
 
     +'<div class="sec-hdr">Indicadores do Mês</div>'
-    +'<div class="kpi-grid" style="grid-template-columns:repeat('+(CUR.role==='owner'?7:4)+',1fr)">'
+    +'<div class="kpi-grid" style="grid-template-columns:repeat('+(CUR.role==='owner'?6:3)+',1fr)">'
     +'<div class="kpi" style="--kt:var(--g2)"><div class="kpi-label">Faturamento</div><div class="kpi-val">'+fmt(totR)+'</div><div class="kpi-sub">Meta: '+fmt(metaM)+'</div></div>'
     +'<div class="kpi" style="--kt:'+(pct>=1?'var(--grn)':'var(--red)')+'"><div class="kpi-label">% Meta Mensal</div><div class="kpi-val" style="color:'+(pct>=1?'var(--grn)':'var(--red)')+'">'+fmtP(pct)+'</div><div class="kpi-sub">'+nOk+'/'+diasOp.length+' dias ✓</div></div>'
-    +'<div class="kpi" style="--kt:var(--amb)"><div class="kpi-label">Ticket Médio/Dia</div><div class="kpi-val">'+fmt(ticket)+'</div><div class="kpi-sub">'+diasOp.length+' dias operacionais</div></div>'
     +lucroKpi
     +'<div class="kpi" style="--kt:var(--brd2)"><div class="kpi-label">Dias c/ Meta</div><div class="kpi-val">'+nOk+'<span style="font-size:14px;color:var(--tx3)">/'+diasOp.length+'</span></div><div class="kpi-sub">'+fmtP(diasOp.length?nOk/diasOp.length:0)+' de aproveitamento</div></div>'
     +'</div>'
@@ -1162,7 +1142,7 @@ function renderVendas(){
     +'</div>'
 
     +'<div class="g2">'
-    +'<div class="card"><div class="card-title">Top 8 Dias por Receita</div><div class="tw"><table><thead><tr><th>#</th><th>Data</th><th>Dia</th><th class="tdr">Receita</th><th class="tdr">Status</th></tr></thead><tbody>'+topDias+'</tbody></table></div></div>'
+    +'<div class="card"><div class="card-title">Top 7 Dias por Receita</div><div class="tw"><table><thead><tr><th>#</th><th>Data</th><th>Dia</th><th class="tdr">Receita</th><th class="tdr">Status</th></tr></thead><tbody>'+topDias+'</tbody></table></div></div>'
     +'<div class="card"><div class="card-title">Histórico 8 Meses</div><div style="position:relative;height:185px"><canvas id="cv-hist"></canvas></div></div>'
     +'</div>'
 
