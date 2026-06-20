@@ -269,7 +269,6 @@ tbody tr:hover td{background:#FBF6EE;}
   <div id="pane-container"></div>
   <div class="footer"><strong>Modelo Panificadora</strong> &nbsp;·&nbsp; Dashboard Gerencial &nbsp;·&nbsp; Atualização automática 2× ao dia · clique ↻ para atualizar agora</div>
 </div>
-
 <script src="app.js"></script>
 </body>
 </html>
